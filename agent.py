@@ -19,7 +19,14 @@ REACH_STAR = 3
 LEAVE_HOME = 4
 STAY_SAFE = 5
 
-class population:
+# Is it possible to move to a goal, globe, star or safe.
+HOME_INDEX = 0
+GOAL_INDEX = 59
+GLOB_INDEXS = [9, 22, 35, 48]
+STAR_INDEXS = [5, 12, 18, 25, 31, 38, 44, 51]
+SAFE_INDEXS = [1, 9, 22, 35, 48, 53, 54, 55, 56, 57, 58]
+
+class Population:
 
     def __init__(self, size ):
         self.mutations = 0
@@ -67,7 +74,7 @@ class Agent:
     def __init__(self, env, size=np.array([100, 8])):
         self.g = env.Game()
         self.pop_size = size
-        self.population = population(size)
+        self.population = Population(size)
 
     def get_action(self, chromosome_idx, player_pcs, mv_pcs, enemy_pcs, dice):
         
@@ -86,8 +93,9 @@ class Agent:
         if dice == 6:
 
             # If some of the pieces are at home, then localize which we are talking about and flip the bits
-            arr_home = np.where(player_pcs[mv_pcs] == 0)
+            arr_home = np.where(player_pcs[mv_pcs] == HOME_INDEX)
 
+            # Update their chromosomes
             for i in range(len(arr_home[0])):
                 state[arr_home[0][i], LEAVE_HOME] = 1
 
@@ -96,12 +104,6 @@ class Agent:
 
         # And make a variable that takes the dice roll, this is a dice roll.
         arr_not_home_dice = player_pcs[arr_not_home_idx] + dice
-
-        # Is it possible to move to a goal, globe, star or safe.
-        GOAL_INDEX = 59
-        GLOB_INDEXS = [9, 22, 35, 48]
-        STAR_INDEXS = [5, 12, 18, 25, 31, 38, 44, 51]
-        SAFE_INDEXS = [9, 22, 35, 48, 53, 54, 55, 56, 57, 58]
 
         # We want to iterate for each index
         for i in range(len(arr_not_home_idx)):
@@ -134,6 +136,7 @@ class Agent:
                 state[arr_not_home_idx[i], STAY_SAFE] = 1
 
             # More enemies are infront when you move.
+            # Figure out how many tokens that are infront of the token before the movement, and then after the movement.
 
             # Less enemies are infront when you move.
         

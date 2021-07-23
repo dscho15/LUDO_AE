@@ -47,6 +47,38 @@ ENEMY_1_INDX_AT_HOME = 40  # HOME_AREAL_INDEXS[0] - 6 - i * 13 # i = 1
 ENEMY_2_INDX_AT_HOME = 27  # HOME_AREAL_INDEXS[0] - 6 - i * 13 # i = 2
 ENEMY_3_INDX_AT_HOME = 14  # HOME_AREAL_INDEXS[0] - 6 - i * 13 # i = 3
 
+def enemy_pos_at_pos_nextlvl(pos):
+    """
+    Returns the index's the other players has to be in to be in the same location as the one given in pos
+
+    :param pos: The location to check for
+    :type pos: int
+    :return enemy_pos: The locations the enemy's pieces has to be at
+    :rtype enemy_pos: list of list
+    """
+    enemy_pos = []
+
+    for enemy_start_pos, enemy_pos_at_start in [[ENEMY_1_GLOB_INDX, ENEMY_1_INDX_AT_HOME],
+                                                [ENEMY_2_GLOB_INDX, ENEMY_2_INDX_AT_HOME],
+                                                [ENEMY_3_GLOB_INDX, ENEMY_3_INDX_AT_HOME]]:
+        post_offset = enemy_start_pos - 1
+        pre_offset = enemy_pos_at_start - 1
+
+        print(pos)
+        if pos == enemy_start_pos:
+            pos_enemy = [START_INDEX, HOME_AREAL_INDEXS[0]]
+        elif pos < 0:
+            pos_enemy = [max(enemy_pos_at_start + pos, -1)]
+        elif START_INDEX <= pos < enemy_start_pos:
+            pos_enemy = [pos + pre_offset]
+        elif pos > HOME_AREAL_INDEXS[0] or pos == HOME_INDEX:
+            pos_enemy = [-1]
+        else:
+            pos_enemy = [pos - post_offset]
+        enemy_pos.append(pos_enemy)
+
+    return enemy_pos
+
 
 def enemy_pos_at_pos(pos):
     """

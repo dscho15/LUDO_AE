@@ -3,7 +3,8 @@ import numpy as np
 import itertools
 
 #   STATE REPRESENTATION:
-#   0. Token reaches goal                                           - done
+#   0. Token reaches goal zone                                      - done
+#   1. The token is hit home                                        - done
 #   1. Token knocks home enemy                                      - done
 #   2. Token lands on globe                                         - done
 #   3. Token lands on a star                                        - done
@@ -18,13 +19,17 @@ REACH_GLOB = 2
 REACH_STAR = 3
 LEAVE_HOME = 4
 STAY_SAFE = 5
+GOAL_ZONE = 6
+LOW_COUNT = 7
+UPP_COUNT = 8
 
 # Is it possible to move to a goal, globe, star or safe.
 HOME_INDEX = 0
-GOAL_INDEX = 59
+GOAL = 59
 GLOB_INDEXS = [9, 22, 35, 48]
 STAR_INDEXS = [5, 12, 18, 25, 31, 38, 44, 51]
-SAFE_INDEXS = [1, 9, 22, 35, 48, 53, 54, 55, 56, 57, 58]
+SAFE_INDEXS = [1, 9, 22, 35, 48, 53, 54, 55, 56, 57, 58, 59]
+GOAL_INDEXS = [54, 55, 56, 57, 58, 59]
 
 
 class Population:
@@ -71,7 +76,8 @@ class Population:
 
 class Agent:
 
-    def __init__(self, env, size=np.array([100, 8])):
+    def __init__(self, env, size=np.array([200, 9])):
+
         self.g = env.Game()
         self.pop_size = size
         self.population = Population(size)
@@ -87,7 +93,7 @@ class Agent:
             return mv_pcs[0]
 
         # Compute a boolean state array, the representation is on top [0 0 0 0 0 0 0 0 0]
-        state = np.zeros(shape=(len(mv_pcs), 8))
+        state = np.zeros(shape=(len(mv_pcs), self.pop_size[1]))
 
         # Only if the dice is 6.
         if dice == 6:
@@ -109,70 +115,93 @@ class Agent:
         for i in range(len(arr_not_home_idx)):
 
             # Can we move to goal?
-            if np.any(arr_not_home_dice[i] == GOAL_INDEX) == True:
+            if (arr_not_home_dice[i] == GOAL) == True:
                 state[arr_not_home_idx[i], REACH_GOAL] = 1
 
-            # Can we knock an enemy? Figure out where they are positioned relative to their own home, offsets of 13, 26, 39
-            move_to_enemy_pov_dice = list(itertools.chain(*ludopy.player.enemy_pos_at_pos(arr_not_home_dice[i])))
+            # Can we move to goal zone?
+            if player_pcs[arr_not_home_idx][i] <= 53:
+                if np.any(arr_not_home_dice[i] == GOAL_INDEXS) == True:
+                    state[arr_not_home_idx[i], GOAL_ZONE] = 1
 
-            # Iterate through enemy_pcs
-            for j in range(len(enemy_pcs)):
-
-                # If enemy_peaces are at same place as move_to_enemy_pov_dice, and there is only one, then it is considered good.
-                if np.count_nonzero(np.where(enemy_pcs[j] == move_to_enemy_pov_dice[j])) == 1:
-                    state[arr_not_home_idx[i], KNOCK_ENEM] = 1
-                    break
-
-            # Can we move to one of the globe index
+            # Can we move to one of the globe indexs?
             if np.any(arr_not_home_dice[i] == GLOB_INDEXS) == True:
                 state[arr_not_home_idx[i], REACH_GLOB] = 1
 
-            # Can we move to one of the star index
+            # Can we move to one of the star indexs?
             if np.any(arr_not_home_dice[i] == STAR_INDEXS) == True:
                 state[arr_not_home_idx[i], REACH_STAR] = 1
 
-            # Can we move to a safe index
+            # Can we move to a safe index - this method does not include friendly players, as they could potentially move?
             if np.any(player_pcs[arr_not_home_idx[i]] == SAFE_INDEXS) == True:
                 state[arr_not_home_idx[i], STAY_SAFE] = 1
 
-            # More enemies are infront when you move.
-            # Figure out how many tokens that are infront of the token before the movement, and then after the movement.
-            move_to_enemy_pov = np.array(list(itertools.chain(*ludopy.player.enemy_pos_at_pos(player_pcs[arr_not_home_idx[i]]))))
-            
-            # More enemies are behind when you move
-            for j in range(len(enemy_pcs)):
+            # Only make sense to compute if player is less than 53.
+            if player_pcs[arr_not_home_idx[i]] < 53:
 
-                # Remove
-                enemy_pov_on_player = enemy_pcs[j][np.where(np.logical_and(enemy_pcs[j] > 0, enemy_pcs[j] <= 53))[0]]
+                # Can we knock an enemy? Figure out where they are positioned relative to their own home, offsets of 13, 26, 39
+                move_to_enemy_pov = np.array(list(itertools.chain(
+                    *ludopy.player.enemy_pos_at_pos(player_pcs[arr_not_home_idx[i]]))))
+                move_to_enemy_pov_dice = np.array(list(itertools.chain(
+                    *ludopy.player.enemy_pos_at_pos(arr_not_home_dice[i]))))
 
-                if len(enemy_pov_on_player) == 0:
-                    continue
-                else:
-                    
-                    # Add or subtract 6
-                    move_to_enemy_pov_removed_6 = move_to_enemy_pov - 6
-                    move_to_enemy_pov_added_6 = move_to_enemy_pov + 6
+                # Iterate through enemy_pcs
+                for j in range(len(enemy_pcs)):
 
-                    # Make sure the limit holds
-                    #limits_lower = move_to_enemy_pov_removed_6[move_to_enemy_pov_removed_6 >= 1 ]
-                    #limits_upper = move_to_enemy_pov_added_6[move_to_enemy_pov_added_6 <= 53 ]
+                    # If enemy_peaces are at same place as move_to_enemy_pov_dice, and there is only one, then it is considered good.
+                    if np.count_nonzero(np.where(enemy_pcs[j] == move_to_enemy_pov_dice[j])) == 1:
+                        state[arr_not_home_idx[i], KNOCK_ENEM] = 1
+                        break
 
-                    print(move_to_enemy_pov)
+                lower_counts_before, lower_counts_after = 0, 0
+                upper_counts_before, upper_counts_after = 0, 0
 
-                    print(player_pcs[arr_not_home_idx[i]], move_to_enemy_pov_removed_6, move_to_enemy_pov_added_6)
-                    
+                # More enemies are behind when you move
+                for j in range(len(enemy_pcs)):
 
+                    # Keep all over zero and all those under or equal to 53.
+                    enemy_pcs_reduced = enemy_pcs[j][np.where(
+                        np.logical_and(enemy_pcs[j] > 0, enemy_pcs[j] <= 53))[0]]
 
-                # Minus the enemy value with 6m
-                #six_steps_behind -= 6
+                    # If empty
+                    if len(enemy_pcs_reduced) == 0:
+                        continue
+                    else:
 
-                #if np.count_nonzero(np.where(enemy_pcs[j] == move_to_enemy_pov_dice[j])) == 1:
+                        # Add or subtract 6
+                        lower_lim = move_to_enemy_pov[j] - 6
+                        if lower_lim < 1:
+                            lower_lim = 1
+                        upper_lim = move_to_enemy_pov[j] + 6
 
-        #exit()
+                        # Before
+                        lower_counts_before += np.count_nonzero(np.logical_and(
+                            lower_lim <= enemy_pcs_reduced, move_to_enemy_pov[j] > enemy_pcs_reduced))
+                        upper_counts_before += np.count_nonzero(np.logical_and(
+                            upper_lim >= enemy_pcs_reduced, move_to_enemy_pov[j] < enemy_pcs_reduced))
+
+                        # Add or subtract after potential move.
+                        lower_lim = move_to_enemy_pov_dice[j] - 6
+                        if lower_lim < 1:
+                            lower_lim = 1
+                        upper_lim = move_to_enemy_pov_dice[j] + 6
+
+                        # After
+                        lower_counts_after += np.count_nonzero(np.logical_and(
+                            lower_lim <= enemy_pcs_reduced, move_to_enemy_pov_dice[j] > enemy_pcs_reduced))
+                        upper_counts_after += np.count_nonzero(np.logical_and(
+                            upper_lim >= enemy_pcs_reduced, move_to_enemy_pov_dice[j] < enemy_pcs_reduced))
+
+                if lower_counts_before > lower_counts_after:
+                    state[arr_not_home_idx[i], LOW_COUNT] = 1
+
+                if upper_counts_before > upper_counts_after:
+                    state[arr_not_home_idx[i], UPP_COUNT] = 1
+
+        print(state)
+        print(state @ np.expand_dims(self.population.arr[chromosome_idx], axis=1))
 
         # now compute what action to take
-        arr = mv_pcs[np.argmax(
-            state @ np.expand_dims(self.population.arr[chromosome_idx], axis=1))]
+        arr = mv_pcs[np.argmax(state @ np.expand_dims(self.population.arr[chromosome_idx], axis=1))]
 
         # Return action
         return arr
@@ -227,18 +256,11 @@ class Agent:
 
         return win_rate/iterations
 
-    # def test(self):
-    #     for i in range(20000):
-    #         self.population.un_mutate()
-    #         self.population.one_point_crossover()
-
 
 def main():
     agent = Agent(ludopy)
     win_rate = agent.evaluate_players(100)
-    print(win_rate)
-    # agent.test()
-
+    np.savetxt('win_rate.out', win_rate.T, delimiter=',')
 
 if __name__ == '__main__':
     main()

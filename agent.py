@@ -3,15 +3,15 @@ import numpy as np
 import itertools
 
 #   STATE REPRESENTATION:
-#   0. Token reaches goal zone                                      - done
-#   1. The token is hit home                                        - done
-#   1. Token knocks home enemy                                      - done
-#   2. Token lands on globe                                         - done
-#   3. Token lands on a star                                        - done
-#   4. Token to leave home square                                   - done
-#   5. Token is safe                                                - done
-#   6. There are more enemies infront of the token after it moves   - working on it
-#   7. There are more enemies behind the token after it moves       - working on it
+#   0. Token reaches goal zone
+#   1. Can knock home enemy
+#   2. Can reach globe
+#   3. Can reach star
+#   4. Leaves the home
+#   5. Can stay safe
+#   6. Is in the goal zone
+#   7. There were more enemies behind before, than after it moved
+#   8. There were more enemies infront before, than after it moved
 
 REACH_GOAL = 0
 KNOCK_ENEM = 1
@@ -35,43 +35,83 @@ GOAL_INDEXS = [54, 55, 56, 57, 58, 59]
 class Population:
 
     def __init__(self, size):
+
         self.mutations = 0
         self.sigma = 0.01
         self.size = size
         self.arr = np.random.uniform(-1, 1, size)
+        self.parents = self.parent_selection()
 
-    def crossover_onepoint_avg(self, prob=0.65):
+    def crossover_onepoint_avg(self):
+
+        # What parents should I choose?
+        np.random.shuffle(self.parents)
+
+        if self.parents.shape[0] % 2 == 0:
+            par_size = self.parents.shape[0]
+        else:
+            par_size = self.parents.shape[0] - 1
+
+        # Should I pick left or right
+        left = np.random.randint(0, 2, size=(int)(par_size/2))
 
         # Figure out which chromosomes to replace
-        self.who_to_update = np.random.uniform(0, 1, self.size[0]) > (1-prob)
+        idx_update = np.random.randint(
+            1, self.size[1]-1, size=(int)(par_size/2))
 
-        # Pair
+        # What chromosomes should I update?
+        self.parents_temp = np.copy(
+            np.split(self.parents[0:par_size], 2, axis=0))
 
-    def mutate(self, prob=0.01, tsh=0.001):
+        k = 0
+        for i in range((int)(par_size/2)):
+            # if left is true, then insert them in the left side
+            if left[i] == 1:
+                self.parents[k, :idx_update[i]
+                             ] = self.parents_temp[0][i, :idx_update[i]]
+                self.parents[k+1, :idx_update[i]
+                             ] = self.parents_temp[1][i, :idx_update[i]]
+                self.parents[k, idx_update[i]:] = (
+                    self.parents_temp[0][i, idx_update[i]:] + self.parents_temp[1][i, idx_update[i]:])/2
+                self.parents[k+1, idx_update[i]:] = (
+                    self.parents_temp[0][i, idx_update[i]:] + self.parents_temp[1][i, idx_update[i]:])/2
+            else:
+                # else insert the genes in right side
+                self.parents[k, idx_update[i]:] = self.parents_temp[0][i, idx_update[i]:]
+                self.parents[k+1, idx_update[i]:] = self.parents_temp[1][i, idx_update[i]:]
+                self.parents[k, :idx_update[i]] = (
+                    self.parents_temp[0][i, :idx_update[i]] + self.parents_temp[1][i, :idx_update[i]])/2
+                self.parents[k+1, :idx_update[i]] = (
+                    self.parents_temp[0][i, :idx_update[i]] + self.parents_temp[1][i, :idx_update[i]])/2
+            k += 2
 
-        # Figure out which genes to replace
-        self.who_to_update = np.random.uniform(0, 1, self.size) > (1-prob)
+    def parent_selection(self, prob=0.50):
 
-        # Calculate tau based on mutations
-        self.mutations += 1
-        tau = 1/self.mutations
+        # figure out which chromosomes to take as parents
+        who_to_update = np.where(np.random.uniform(
+            0, 1, self.size[0]) > (1-prob))[0]
 
-        # Is smaller than threshhold
-        if self.sigma < tsh:
-            self.sigma = tsh
-        else:
-            self.sigma = self.sigma * np.exp(np.random.normal(0, 1) * tau)
+        # those who are higher than the probability are chosen as parents, the indices are now taken.
+        self.parents = self.arr[who_to_update]
 
-        # Uncorrelated Mutation with One Step Size
-        self.arr[self.who_to_update] = self.arr[self.who_to_update] + \
-            self.sigma * np.random.normal(0, 1, self.size)[self.who_to_update]
+    def survivor_selection(self):
 
-        # Ensure nobody is above or below 1
-        self.arr[self.arr > 1] = 1.0
-        self.arr[self.arr < -1] = -1.0
+        # Who will survive, based on FRTS
+        # Implement selection probabilities.
+        
 
-        print(self.sigma)
-        print(np.count_nonzero(self.who_to_update == True))
+
+    def mutate(self, prob=0.01):
+
+        # figure out which genes to replace
+        who_to_update = np.random.uniform(0, 1, self.parents.shape) > (1-prob)
+
+        # uncorrelated Mutation with One Step Size
+        self.parents[who_to_update] = np.random.uniform(-1, 1, self.parents.shape)[who_to_update]
+
+        # ensure nobody is above or below 1
+        self.parents[self.parents > 1] = 1.0
+        self.parents[self.parents < -1] = -1.0
 
 
 class Agent:
@@ -197,13 +237,11 @@ class Agent:
                 if upper_counts_before > upper_counts_after:
                     state[arr_not_home_idx[i], UPP_COUNT] = 1
 
-        print(state)
-        print(state @ np.expand_dims(self.population.arr[chromosome_idx], axis=1))
-
         # now compute what action to take
-        arr = mv_pcs[np.argmax(state @ np.expand_dims(self.population.arr[chromosome_idx], axis=1))]
+        arr = mv_pcs[np.argmax(
+            state @ np.expand_dims(self.population.arr[chromosome_idx], axis=1))]
 
-        # Return action
+        # return that action
         return arr
 
     def evaluate_players(self, iterations):
@@ -259,8 +297,10 @@ class Agent:
 
 def main():
     agent = Agent(ludopy)
-    win_rate = agent.evaluate_players(100)
-    np.savetxt('win_rate.out', win_rate.T, delimiter=',')
+
+    #win_rate = agent.evaluate_players(100)
+    #np.savetxt('win_rate.out', win_rate.T, delimiter=',')
+
 
 if __name__ == '__main__':
     main()

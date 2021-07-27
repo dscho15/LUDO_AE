@@ -373,7 +373,7 @@ class Agent:
 
     def train_agent(self, n, iterations):
 
-        ws = np.zeros((n, 100))
+        ws = np.zeros((n, 200))
 
         for i in range(n):
 
@@ -410,13 +410,9 @@ class Agent:
 
 def main():
 
-    agent = Agent(ludopy)
+    agent = Agent(ludopy, np.array([200, 9]))
 
     agent.train_agent(50, 500)
-
-    ws = np.loadtxt('win_rate.out', delimiter=',')
-
-    agent.get_fitness(1000)
 
 
 if __name__ == '__main__':

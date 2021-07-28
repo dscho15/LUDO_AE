@@ -3,21 +3,6 @@ import numpy as np
 import itertools
 from multiprocessing import Process, Array
 
-#   STATE REPRESENTATION:
-#   0. Token reaches goal zone
-#   1. Can knock home enemy
-#   2. Can reach globe
-#   3. Can reach star
-#   4. Leaves the home
-#   5. Can stay safe
-#   6. Is in the goal zone
-#   7. There were more enemies behind before, than after it moved
-#   8. There were more enemies infront before, than after it moved
-#   9.  Is first -
-#   10. Is second -
-#   11. Is third -
-#   12. Is fourth -
-
 REACH_GOAL = 0
 KNOCK_ENEM = 1
 REACH_GLOB = 2
@@ -27,14 +12,16 @@ STAY_SAFE = 5
 GOAL_ZONE = 6
 LOW_COUNT = 7
 UPP_COUNT = 8
+NORM_DISTANCE = 9
+SECOND = 10
+THIRD = 11
+FOURTH = 12
 
 # Is it possible to move to a goal, globe, star or safe.
 HOME_INDEX = 0
 GOAL = 59
 GLOB_INDEXS = [9, 22, 35, 48]
 STAR_INDEXS = [5, 12, 18, 25, 31, 38, 44, 51]
-SAFE_INDEXS = [1, 9, 22, 35, 48, 53, 54, 55, 56, 57, 58, 59]
-GOAL_INDEXS = [54, 55, 56, 57, 58, 59]
 ONE_ROUND = 53
 
 
@@ -42,8 +29,7 @@ class Population:
 
     def __init__(self, size):
 
-        self.mutations = 0
-        self.sigma = 0.01
+        self.sigma = 0.1
         self.size = size
         self.arr = np.random.uniform(-1, 1, size)
 
@@ -125,17 +111,40 @@ class Population:
 
             k += 2
 
-    def mutate(self, prob=0.02):
+    def mutate_uniform(self, prob=0.01):
     
         # Figure out which genes to replace
         who_to_update = np.random.uniform(0, 1, self.parents.shape) > (1-prob)
 
-        # Uncorrelated Mutation with One Step Size
+        # Uniform mutation
         self.parents[who_to_update] = np.random.uniform(-1, 1, self.parents.shape)[who_to_update]
 
         # Ensure nobody is above or below 1
         self.parents[self.parents > 1] = 1.0
         self.parents[self.parents < -1] = -1.0
+    
+    def mutate_uncor(self, prob=0.01):
+
+        # Figure out which genes to replace
+        who_to_update = np.random.uniform(0, 1, self.parents.shape) > (1-prob)
+
+        # Tau is inverse proportional to the size
+        self.tau = 1/np.sqrt(self.parents.shape[0])
+
+        # Sigma
+        self.sigma = self.sigma * np.exp(self.tau * np.random.normal(0, 1))
+
+        # Uniform mutaion
+        self.parents[who_to_update] += self.sigma * np.random.normal(0, 1, self.parents.shape)[who_to_update]
+
+        # Ensure nobody is above or below 1
+        self.parents[self.parents > 1] = 1.0
+        self.parents[self.parents < -1] = -1.0
+
+        if self.sigma > 0.5:
+            self.sigma = 0.5
+        elif self.sigma < 0.01:
+            self.sigma = 0.01
 
     def parent_selection(self, prob=0.50):
 
@@ -186,7 +195,7 @@ class Population:
 
 class Agent:
 
-    def __init__(self, env, size=np.array([100, 9])):
+    def __init__(self, env, size=np.array([100, 13])):
 
         self.g = env
         self.number_of_genes = size[1]
@@ -224,26 +233,17 @@ class Agent:
         # We want to iterate for each index
         for i in range(len(idx_moveable)):
 
-            # Can we move to goal?
             if (pos_after_dice[i] == GOAL) == True:
                 state[idx_moveable[i], REACH_GOAL] = 1
 
-            # Can we move to goal zone?
-            if player_pcs[idx_moveable][i] <= ONE_ROUND:
-                if np.any(pos_after_dice[i] == GOAL_INDEXS) == True:
-                    state[idx_moveable[i], GOAL_ZONE] = 1
-
-            # Can we move to one of the globe indexs?
             if np.any(pos_after_dice[i] == GLOB_INDEXS) == True:
                 state[idx_moveable[i], REACH_GLOB] = 1
 
-            # Can we move to one of the star indexs?
             if np.any(pos_after_dice[i] == STAR_INDEXS) == True:
                 state[idx_moveable[i], REACH_STAR] = 1
-
-            # Can we move to a safe index - this method does not include friendly players, as they could potentially move?
-            if np.any(player_pcs[idx_moveable[i]] == SAFE_INDEXS) == True:
-                state[idx_moveable[i], STAY_SAFE] = 1
+            
+            # The normalized distance it has moved
+            state[idx_moveable[i], NORM_DISTANCE] = (player_pcs[idx_moveable[i]] ) / 56
 
             # Only make sense to compute if player is less than 53.
             if player_pcs[idx_moveable[i]] < 53:
@@ -260,6 +260,8 @@ class Agent:
                     if np.count_nonzero(np.where(enemy_pcs[j] == pos_enemy_pov_dice[j])) == 1:
                         state[idx_moveable[i], KNOCK_ENEM] = 1
                         break
+                
+                # What is the probability that enemy hits the piece home?
                 
                 # variables to count enemy pieces before and after
                 lower_counts_before, lower_counts_after = 0, 0
@@ -371,9 +373,9 @@ class Agent:
 
                 game.reset()
 
-    def train_agent(self, n, iterations):
+    def train_agent(self, n, iterations, chromosomes):
 
-        ws = np.zeros((n, 200))
+        ws = np.zeros((n, chromosomes))
 
         for i in range(n):
 
@@ -383,11 +385,11 @@ class Agent:
 
             print("Recombination...")
 
-            self.population.recombination()
+            self.population.recombination_avg()
 
             print("Mutate...")
 
-            self.population.mutate()
+            self.population.mutate_uncor(prob=0.01)
 
             print("Update genes...")
 
@@ -410,9 +412,9 @@ class Agent:
 
 def main():
 
-    agent = Agent(ludopy, np.array([200, 9]))
+    agent = Agent(ludopy, np.array([100, 13]))
 
-    agent.train_agent(50, 500)
+    agent.train_agent(30, 250, 100)
 
 
 if __name__ == '__main__':
